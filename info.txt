@@ -1,0 +1,301 @@
+
+/
+Claude finished the response
+Can you see the code?
+
+1:21 AM
+Yes, I can see the code! It's a Streamlit RAG (Retrieval-Augmented Generation) chatbot called "JHT RAG-Augmented Business Assistant". Here's a quick summary of what it does:
+
+Stack: Streamlit + LangChain + ChromaDB + Ollama (local LLMs)
+
+How it works:
+
+Custom Embeddings — Uses a custom OllamaEmbeddings class with the nomic-embed-text model to generate vector embeddings locally.
+Knowledge Base Ingestion — Loads info.txt, strips Word formatting bytes, chunks it (1000 chars, 30 overlap), and stores embeddings in ChromaDB. This is cached so it only runs once on startup.
+Chat UI — Standard Streamlit chat interface with session state to maintain conversation history.
+RAG Pipeline — On each user query, it does a similarity search (top 2 chunks) against ChromaDB, injects the retrieved context into a system prompt, then sends it to llama3.2:3b via Ollama.
+Streaming — Responses stream back token by token with a cursor (▌) effect.
+Do you want help with anything specific — like modifying it, debugging, adding features, or something else?
+
+Do you think the architecture is solid?
+
+1:21 AM
+Overall it's a decent foundation for a local RAG app, but there are a few areas worth looking at:
+
+What's done well:
+
+@st.cache_resource is the right call for the vector store — avoids re-indexing on every rerun
+temperature: 0.0 is a smart choice for a factual business assistant
+utf-8-sig with errors='ignore' handles messy Word-exported text gracefully
+Streaming response with the cursor effect is a nice UX touch
+Concerns worth addressing:
+
+Retrieval quality — k=2 is quite low. If the answer spans multiple chunks, you might miss context. Also chunk_overlap=30 is very small relative to chunk_size=1000, so you risk cutting sentences mid-thought at boundaries.
+
+Single file limitation — It's hardcoded to one info.txt. If your knowledge base grows, this becomes a bottleneck with no easy way to add sources.
+
+No retrieval feedback — The user has no idea why the bot answered a certain way or if the context was actually relevant. Adding source chunk display (even collapsible) helps with trust and debugging.
+
+Conversation history risk — You're passing the last 4 messages back to the LLM, but the system prompt is rebuilt fresh each turn with new context. If the user's follow-up question is vague (e.g. "tell me more"), the similarity search runs against that vague query, not the original topic, so retrieval can go off-track.
+
+No fallback if vector_db is None — If info.txt is missing, the bot still runs but answers purely from the LLM with no grounding, which contradicts the "ONLY the context facts" instruction in the system prompt.
+
+The biggest architectural gap is probably the vague follow-up query problem — it's a very common RAG failure mode. Would you like suggestions on how to address any of these specifically?
+
+Can you fix all of this about the code
+
+1:22 AM
+Let me read the code carefully and then produce a fixed version.
+
+
+Reading the app.py file
+Reading the app.py file
+Now let me write the improved version addressing all the issues:
+
+
+Ran a command, created a file, read a file
+Ran a command, created a file, read a file
+Here's a summary of every fix applied:
+
+1. Multi-file knowledge base load_knowledge_files() now scans the directory for all .txt files instead of hardcoding info.txt. Each document carries a source metadata tag so you can trace which file an answer came from.
+
+2. Better chunking chunk_overlap was raised from 30 → 150 so sentences that straddle chunk boundaries aren't lost mid-thought.
+
+3. More retrieval coverage k was raised from 2 → 4 so answers that span multiple sections of your knowledge base are still captured.
+
+4. Query rewriting for vague follow-ups A new rewrite_query() function sends the recent conversation + the vague query to the LLM first, asking it to produce a fully self-contained, specific question before that hits the vector DB. So "tell me more" becomes something like "What are JHT's full opening hours?" — which retrieves the right chunks.
+
+5. Explicit fallback when vector_db is None Instead of silently running with no context, the app now shows a clear st.error banner and injects a different system prompt that explicitly tells the LLM it has no data — preventing hallucination.
+
+6. Source chunk transparency Every assistant reply now shows a collapsible 📄 View source context used expander displaying exactly which chunks (and which file) were used to form the answer. This is preserved in session state so it's visible in conversation history too.
+
+
+App
+PY 
+Okay, thanks for that
+
+1:23 AM
+You're welcome! Good luck with the project. Feel free to come back if you run into issues or want to extend it further — things like adding a file uploader UI, switching to a different embedding model, or adding relevance score thresholds to the retrieval are all natural next steps if you need them.
+
+Well, I do have one more issue. This isnt about the code though. Its about the knowledge base txt file. I'm afraid I feel like the model hallucinates and mixes up information all the time because the knowledge base is not optimised for the model or the RAG pipeline. I need to figure out how to make a well-structured knowledge base txt file for the model to perform optimally. Would you be able to read the knowledge base and remodel it to work well with the RAG pipeline if I gave you the txt file?
+
+1:25 AM
+Absolutely, yes! That's a great thing to optimise — a well-structured knowledge base makes a huge difference in RAG performance.
+
+Go ahead and upload your info.txt file and I'll:
+
+Analyse how it's currently structured and identify what's causing retrieval confusion
+Restructure it to work well with the chunking strategy in your pipeline (1000 char chunks, 150 overlap)
+Rewrite the content so each chunk is self-contained and unambiguous — meaning the model won't need to "guess" or bridge across chunks to form an answer
+A few things that commonly cause hallucination in RAG knowledge bases:
+
+Information scattered across the file with no clear section boundaries
+Pronouns and references like "it", "they", "the above" that lose meaning when a chunk is retrieved in isolation
+Related facts grouped together that get split by the chunker mid-thought
+Redundant or contradictory phrasing that confuses the LLM
+Upload the file whenever you're ready!
+
+JHT Cleaning Service Knowledge Base.pdf
+pdf
+
+This is the knowledge base, sorry its in PDF form
+
+1:26 AM
+No worries about the PDF — I can read it just fine! Let me analyse it and rewrite it into an optimised knowledge base.
+
+
+Reading the PDF skill
+Reading the PDF skill
+Good — I already have the full PDF content in context from your upload, so I can work directly from that. Let me now write the optimised knowledge base.
+
+
+Created a file, read a file
+Created a file, read a file
+Here's what I changed and why:
+
+Every section is now self-contained. The original document used pronouns like "they", "their", and "the above" heavily. When a chunk is retrieved in isolation, those references are meaningless. Every sentence in the new file names "JHT Cleaning Service" explicitly so a retrieved chunk makes complete sense on its own.
+
+Pricing sections are split by service type. Previously all pricing was in one long block, which meant the chunker would frequently split it mid-table — causing the model to see sofa prices without knowing they're for sofas, or carpet prices without the carpet context. Now each service has its own dedicated section.
+
+Section headers act as chunk anchors. The SECTION: headers give the chunker clean, natural split points. Even if a chunk boundary falls mid-section, the header at the top of each section tells the model exactly what topic it's reading about.
+
+Ambiguous pricing is made explicit. The original said things like "RM 250 per month per cleaner on weekly basis (4 times a month)" — easy to misread. The rewrite spells out "4 visits per month" plainly.
+
+Tool fees are separated clearly. In the original, tool fees were buried at the bottom with no explanation of what they apply to. The new file makes clear they are additional charges on top of service rates, with each one labelled.
+
+Just drop this info.txt into your app directory and restart — it'll re-index automatically thanks to @st.cache_resource.
+
+
+Info
+TXT 
+
+
+
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+Info · TXT
+# JHT CLEANING SERVICE — KNOWLEDGE BASE
+# Optimised for RAG retrieval. Each section is self-contained.
+# Do not remove section headers — they anchor chunk identity.
+ 
+================================================================================
+SECTION: COMPANY OVERVIEW
+================================================================================
+ 
+JHT Cleaning Service is a professional cleaning company based in Ampang, Selangor, Malaysia. The company was founded by Shyamala Deenathayalan during the COVID-19 pandemic, when she identified a critical need for professional sanitation and hygiene services during the lockdowns. JHT started as a small one-person door-to-door service and grew into a structured corporate entity with dedicated office locations in Ampang and Kuala Lumpur City Centre.
+ 
+JHT Cleaning Service has been operating for approximately five years and has served over 1,000 satisfied clients since its inception. A significant portion of JHT's business comes from word-of-mouth referrals and recurring contracts for office and building maintenance. JHT Cleaning Service was recognised as one of the Top 10 Best Commercial Cleaning Services in Kuala Lumpur by Malaysia Brands, selected based on quality of service and real customer reviews.
+ 
+================================================================================
+SECTION: TEAM AND WORKFORCE
+================================================================================
+ 
+JHT Cleaning Service employs a team of 30 or more professional cleaners. JHT's staff are highly trained to work with minimal supervision. The team includes specialists for upholstery steam cleaning and heavy-duty industrial tasks such as post-renovation debris removal. JHT's management, led by founder Shyamala Deenathayalan, is frequently described by clients as responsive and organised. JHT's management focuses on flexibility to accommodate short-notice client requests.
+ 
+================================================================================
+SECTION: PERFORMANCE AND CLIENT FEEDBACK
+================================================================================
+ 
+JHT Cleaning Service has built a strong reputation in the competitive cleaning industry in Kuala Lumpur and Selangor. JHT has served over 1,000 satisfied clients since the company was founded approximately five years ago.
+ 
+Client feedback summary for JHT Cleaning Service:
+- Reliability: JHT's cleaners are frequently praised for punctuality and for going above and beyond the standard cleaning checklist.
+- Communication: JHT's manager Shyamala Deenathayalan receives high marks from clients for responsiveness and efficiency in scheduling.
+- Quality of Work: JHT has a strong track record in deep cleaning and move-out cleaning scenarios where attention to detail is critical.
+ 
+================================================================================
+SECTION: OFFICE LOCATION AND SERVICE AREA
+================================================================================
+ 
+JHT Cleaning Service's primary service headquarters and administrative address is:
+E-38-03, Axis Crown @ Axis Pandan, Jalan Cempaka, Taman Cempaka, 68000 Ampang, Selangor.
+ 
+This Ampang location is JHT's central hub for dispatching cleaning teams and managing equipment. Because JHT is located in Ampang — a border area between Kuala Lumpur and Selangor — the company covers a wide service radius.
+ 
+JHT Cleaning Service's service area coverage includes the following locations:
+- Ampang
+- Kuala Lumpur (KL) and Kuala Lumpur City Centre (KLCC)
+- Cheras and Kajang
+- Petaling Jaya (PJ)
+- Subang Jaya and Shah Alam
+- Damansara and Mont Kiara
+ 
+================================================================================
+SECTION: OPERATING HOURS
+================================================================================
+ 
+JHT Cleaning Service operating hours are as follows:
+- Monday to Friday: 9:00am to 6:00pm
+- Saturday: 9:00am to 3:00pm
+- Sunday: Closed. JHT Cleaning Service does not operate on Sundays.
+ 
+================================================================================
+SECTION: CONTACT INFORMATION
+================================================================================
+ 
+JHT Cleaning Service contact details:
+- Phone and WhatsApp: +60172786498 (available for both WhatsApp messages and phone calls)
+- Email: jhtcleaningservice@gmail.com
+- Website: https://jhtcleaningservice.com/
+- LinkedIn: https://www.linkedin.com/company/jht-cleaning-service/
+- Instagram: https://www.instagram.com/jhtcleaningservice
+ 
+================================================================================
+SECTION: HOW TO MAKE A BOOKING OR ENQUIRY
+================================================================================
+ 
+Customers can make a booking or send an enquiry to JHT Cleaning Service in two ways:
+1. Send a WhatsApp message to JHT Cleaning Service at +60172786498.
+2. Visit JHT Cleaning Service's website at https://jhtcleaningservice.com/ and fill in the order form available on the website.
+ 
+================================================================================
+SECTION: SERVICES OFFERED AND PRICING — NORMAL AND DEEP CLEANING
+================================================================================
+ 
+JHT Cleaning Service offers Normal Cleaning at a rate of RM 30 per hour per cleaner.
+ 
+JHT Cleaning Service offers Deep Cleaning at a rate of RM 37 per hour per cleaner. Deep cleaning is a more thorough and detailed clean compared to normal cleaning.
+ 
+================================================================================
+SECTION: SERVICES OFFERED AND PRICING — OFFICE CLEANING
+================================================================================
+ 
+JHT Cleaning Service offers Office Cleaning with two pricing options:
+ 
+Option 1 — Hourly rate:
+- Normal office cleaning: RM 30 per hour per cleaner.
+- Deep office cleaning: RM 37 per hour per cleaner.
+ 
+Option 2 — Monthly package:
+- RM 250 per month per cleaner, based on weekly cleaning visits (4 visits per month).
+ 
+================================================================================
+SECTION: SERVICES OFFERED AND PRICING — MOVE-IN AND MOVE-OUT CLEANING
+================================================================================
+ 
+JHT Cleaning Service offers Move-in and Move-out Cleaning at a rate of 30 cents per square foot (sqft).
+ 
+If a scrubbing machine is required during Move-in or Move-out Cleaning, there is an additional charge of 80 cents per square foot for the use of the scrubbing machine.
+ 
+================================================================================
+SECTION: SERVICES OFFERED AND PRICING — BUILDING MAINTENANCE AND POST-RENOVATION CLEANING
+================================================================================
+ 
+JHT Cleaning Service offers Building Maintenance Cleaning. The price for Building Maintenance Cleaning is determined by negotiation based on the specific cleaning requirements of the project.
+ 
+JHT Cleaning Service offers Post-Renovation Cleaning. The price for Post-Renovation Cleaning is determined by negotiation based on the specific cleaning requirements of the project.
+ 
+Customers interested in Building Maintenance Cleaning or Post-Renovation Cleaning should contact JHT Cleaning Service directly at +60172786498 or jhtcleaningservice@gmail.com to discuss requirements and pricing.
+ 
+================================================================================
+SECTION: SERVICES OFFERED AND PRICING — CURTAIN CLEANING
+================================================================================
+ 
+JHT Cleaning Service offers Curtain Cleaning. Curtain Cleaning pricing starts from RM 50 for one panel of curtain.
+ 
+================================================================================
+SECTION: SERVICES OFFERED AND PRICING — CARPET CLEANING
+================================================================================
+ 
+JHT Cleaning Service offers Carpet Cleaning with the following pricing:
+- Office carpet flooring: 30 to 40 cents per square foot, depending on the carpet material.
+- Small single carpet (not office flooring): starting from RM 80.
+ 
+================================================================================
+SECTION: SERVICES OFFERED AND PRICING — SOFA AND UPHOLSTERY CLEANING
+================================================================================
+ 
+JHT Cleaning Service offers Sofa Cleaning. Sofa Cleaning pricing depends on the sofa material and size:
+ 
+Full Velvet Sofa pricing:
+- 1-seater velvet sofa: RM 75
+- 2-seater velvet sofa: RM 150
+- 3-seater velvet sofa: RM 225
+ 
+Half Velvet Sofa (mixed velvet and leather material) pricing:
+- 1-seater half velvet sofa: RM 50
+- 2-seater half velvet sofa: RM 100
+- 3-seater half velvet sofa: RM 150
+ 
+================================================================================
+SECTION: ADDITIONAL CHARGES — TOOLS AND EQUIPMENT FEES
+================================================================================
+ 
+JHT Cleaning Service charges an additional tools and equipment fee depending on the type of service. These tool fees are separate from the service rates listed above:
+ 
+- Normal Cleaning tools fee: RM 25
+- Deep Cleaning tools fee: RM 35
+- Post-Renovation Cleaning tools fee: RM 50
+- Scrubbing Machine fee (for Building Maintenance or Construction Cleaning): 80 cents per square foot
+ 
+================================================================================
+SECTION: INVESTOR RELATIONS, SPONSORSHIPS AND COLLABORATIONS
+================================================================================
+ 
+Any organisation interested in investment opportunities, sponsorships, or collaborations with JHT Cleaning Service may send an email to jhtcleaningservice@gmail.com describing the opportunity.
+ 
+
+
+
