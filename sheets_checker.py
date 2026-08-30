@@ -6,7 +6,7 @@ from googleapiclient.errors import HttpError
 
 
 def _build_service():
-    api_key = os.environ.get("GOOGLE_API_KEY", "")
+    api_key = os.environ.get("API_KEY", "")
     return build("sheets", "v4", developerKey=api_key)
 
 
